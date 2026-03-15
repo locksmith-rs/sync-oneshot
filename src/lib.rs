@@ -1,3 +1,31 @@
+//! A minimal oneshot channel for synchronous Rust.
+//!
+//! A oneshot channel is used for sending a single message between threads.
+//! The [`channel`] function is used to create a [`Sender`] and [`Receiver`]
+//! handle pair that form the channel.
+//!
+//! The [`Sender`] handle is used by the producer to send the value.  
+//! The [`Receiver`] handle is used by the consumer to receive the value.
+//!
+//! Each handle can be used on other threads.
+//!
+//! [`Sender::send`] will no block the calling thread.  
+//! [`Receiver::recv`] will **block** the calling thread.
+//!
+//! # Example
+//! ```rust
+//! # use std::time::Duration;
+//! let (tx, rx) = sync_oneshot::channel();
+//!
+//! std::thread::spawn(move || {
+//!     std::thread::sleep(Duration::from_millis(200));
+//!     tx.send(5).unwrap();
+//! });
+//!
+//! // blocking thread until a message available
+//! let val = rx.recv().unwrap();
+//! assert_eq!(val, 5);
+//! ```
 use std::{
     sync::{
         Arc,
@@ -14,7 +42,13 @@ mod slot;
 
 pub use error::RecvError;
 
-/// Create synchronous oneshot channel.
+/// Creates a new oneshot channel, returning the sender/receiver halves.
+///
+/// The [`Sender`] is used by the producer to send the value.
+/// The [`Receiver`] handle is used by the consumer to receive the value.
+///
+/// [`send`](Sender::send) will no block the calling thread. [`recv`](Receiver::recv)
+/// will **block** until a message is available.
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     let inner = Arc::new(Inner {
         state: AtomicUsize::new(0),
@@ -30,10 +64,19 @@ pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     )
 }
 
+/// Sends a value to the associated [`Receiver`].
+///
+/// This is created by the [`channel`] function.  
+/// Messages can be sent using [`send`](Sender::send).
 pub struct Sender<T> {
     inner: Option<Arc<Inner<T>>>,
 }
 
+/// Receive a value from the associated [`Sender`].
+///
+/// This is created by the [`channel`] function.  
+/// Messages sent to the channel can be retrieved using [`recv`](Receiver::recv).
+/// [`recv`](Receiver::recv) method blocks thread.
 pub struct Receiver<T> {
     inner: Option<Arc<Inner<T>>>,
 }
@@ -53,6 +96,31 @@ unsafe impl<T> Send for Receiver<T> where T: Send {}
  *
  */
 impl<T> Sender<T> {
+    /// Attempts to send a value on this channel, returning it back if it could not be sent.
+    ///
+    /// A successful send occurs when it is determined that the other end of the
+    /// channel has not hung up already. An unsuccessful send would be one where
+    /// the corresponding receiver has already been deallocated. Note that a
+    /// return value of [`Err`] means that the data will never be received, but
+    /// a return value of [`Ok`] does *not* mean that the data will be received.
+    /// It is possible for the corresponding receiver to hang up immediately
+    /// after this function returns [`Ok`].
+    ///
+    /// This method will never block the current thread.
+    /// # Example
+    /// ```rust
+    /// let (tx, rx) = sync_oneshot::channel();
+    /// std::thread::spawn(move || {
+    ///     if let Err(e) = tx.send(5) {
+    ///         println!("the receiver dropped");
+    ///     }
+    /// });
+    ///
+    /// match rx.recv() {
+    ///     Ok(v) => println!("got = {:?}", v),
+    ///     Err(_) => println!("the sender dropped"),
+    /// }
+    /// ```
     pub fn send(mut self, value: T) -> Result<(), T> {
         // take inner
         // The case inner None is unreachable
@@ -104,6 +172,28 @@ impl<T> Drop for Sender<T> {
  *
  */
 impl<T> Receiver<T> {
+    /// Attempts to wait for a value on this receiver, returning an error if
+    /// the corresponding channel has hung up.
+    ///
+    /// This function will always block the current thread if there is no data
+    /// available. Once a message is sent to the corresponding [`Sender`],
+    /// this receiver will wake up and return that message.
+    ///
+    /// If the corresponding [`Sender`] has disconnected, or it disconnects while
+    /// this call is blocking, this call will wake up and return [`Err`] to
+    /// indicate that no more messages can ever be received on this channel.
+    /// # Example
+    /// ```rust
+    /// let (tx, rx) = sync_oneshot::channel();
+    ///
+    /// let th_handle = std::thread::spawn(move || {
+    ///     tx.send(5).unwrap();
+    /// });
+    ///
+    /// th_handle.join().unwrap();
+    ///
+    /// assert_eq!(5, rx.recv().unwrap());
+    /// ```
     pub fn recv(mut self) -> Result<T, RecvError> {
         let inner = self.inner.take().unwrap();
 

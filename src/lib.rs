@@ -107,8 +107,8 @@ impl<T> Receiver<T> {
     pub fn recv(mut self) -> Result<T, RecvError> {
         let inner = self.inner.take().unwrap();
 
+        let mut state = inner.state.load(Ordering::Acquire);
         loop {
-            let mut state = inner.state.load(Ordering::Relaxed);
             if State(state).is_complete() {
                 let value = unsafe { inner.value.take() };
                 return value.ok_or(RecvError::ShutDown);
@@ -124,10 +124,13 @@ impl<T> Receiver<T> {
             match inner.state.compare_exchange(
                 state,
                 state | WAITING,
-                Ordering::AcqRel,
+                Ordering::Release,
                 Ordering::Acquire,
             ) {
-                Ok(_) => thread::park(),
+                Ok(_) => {
+                    thread::park();
+                    state = inner.state.load(Ordering::Acquire);
+                }
                 Err(actual) => state = actual,
             }
         }
@@ -139,8 +142,8 @@ impl<T> Drop for Receiver<T> {
         // if inner is some, Receiver::recv is not called before drop.
         // Drop value or change state
         if let Some(inner) = self.inner.take() {
+            let mut state = inner.state.load(Ordering::Acquire);
             loop {
-                let mut state = inner.state.load(Ordering::Relaxed);
                 if State(state).is_complete() {
                     unsafe {
                         inner.consumu_value();
@@ -151,8 +154,8 @@ impl<T> Drop for Receiver<T> {
                 match inner.state.compare_exchange(
                     state,
                     state | CLOSED,
-                    Ordering::AcqRel,
-                    Ordering::Acquire, // can Relaxed?
+                    Ordering::Relaxed,
+                    Ordering::Acquire,
                 ) {
                     Ok(_) => break,
                     Err(actual) => state = actual,
@@ -179,7 +182,7 @@ impl<T> Inner<T> {
                 state,
                 state | VALUE_SENT,
                 Ordering::AcqRel,
-                Ordering::Acquire,
+                Ordering::Relaxed,
             ) {
                 Ok(_) => break,
                 Err(actual) => state = actual,

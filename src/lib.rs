@@ -118,7 +118,11 @@ impl<T> Receiver<T> {
                 // SAFETY:
                 // Notify::notify dose not call untill state is WAITNG.
                 // So we can access notify.
-                inner.notify.set_current();
+
+                // Prevent double write due to spurious wake-up.
+                if !State(state).is_waiting() {
+                    inner.notify.set_current();
+                }
             }
 
             match inner.state.compare_exchange(

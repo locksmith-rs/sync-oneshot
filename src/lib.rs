@@ -201,7 +201,7 @@ impl<T> Receiver<T> {
         loop {
             if State(state).is_complete() {
                 let value = unsafe { inner.value.take() };
-                return value.ok_or(RecvError::ShutDown);
+                return value.ok_or(RecvError);
             }
 
             unsafe {

@@ -128,7 +128,7 @@ impl<T> Sender<T> {
 
         // set value
         unsafe {
-            // SAFTY:
+            // SAFETY:
             // Receiver don't access inner value until set status as VALUE_SENT
             inner.value.set(value);
         }
@@ -137,7 +137,7 @@ impl<T> Sender<T> {
         let prev_state = inner.set_complete();
 
         if prev_state.is_closed() {
-            // SAFTY:
+            // SAFETY:
             // Receiver already has been droped. So can access inner value.
             return Err(unsafe { inner.consumu_value().unwrap() });
         }

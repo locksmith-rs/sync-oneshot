@@ -26,6 +26,16 @@
 //! let val = rx.recv().unwrap();
 //! assert_eq!(val, 5);
 //! ```
+#[cfg(loom)]
+use loom::{
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread,
+};
+
+#[cfg(not(loom))]
 use std::{
     sync::{
         Arc,
@@ -318,71 +328,125 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use std::{thread, time::Duration};
+
+    #[cfg(loom)]
+    use loom::thread;
+
+    #[cfg(not(loom))]
+    use std::thread;
 
     use crate::channel;
 
     #[test]
     fn test_local() {
-        let (tx, rx) = channel();
+        let test_inner = || {
+            let (tx, rx) = channel();
 
-        tx.send(5).unwrap();
+            tx.send(5).unwrap();
 
-        let result = rx.recv().unwrap();
-        assert_eq!(result, 5);
+            let result = rx.recv().unwrap();
+            assert_eq!(result, 5);
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
     }
 
     #[test]
     fn test_thread_tx() {
-        let (tx, rx) = channel();
+        let test_inner = || {
+            let (tx, rx) = channel();
 
-        std::thread::spawn(move || {
-            thread::sleep(Duration::from_millis(100));
-            tx.send(5).unwrap();
-        });
+            thread::spawn(move || {
+                thread::yield_now();
+                tx.send(5).unwrap();
+            });
 
-        let result = rx.recv().unwrap();
-        assert_eq!(result, 5);
+            let result = rx.recv().unwrap();
+            assert_eq!(result, 5);
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
     }
 
     #[test]
     fn test_thread_rx() {
-        let (tx, rx) = channel();
+        let test_inner = || {
+            let (tx, rx) = channel();
 
-        let result = std::thread::spawn(move || rx.recv().unwrap());
+            let result = thread::spawn(move || rx.recv().unwrap());
 
-        thread::sleep(Duration::from_millis(100));
-        tx.send(5).unwrap();
-        assert_eq!(result.join().unwrap(), 5);
+            thread::yield_now();
+
+            tx.send(5).unwrap();
+            assert_eq!(result.join().unwrap(), 5);
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
     }
 
     #[test]
     fn test_rx_already_closed() {
-        let (tx, rx) = channel();
+        let test_inner = || {
+            let (tx, rx) = channel();
 
-        drop(rx);
+            drop(rx);
 
-        let result = tx.send(5);
-        assert!(result.is_err());
+            let result = tx.send(5);
+            assert!(result.is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
     }
 
     #[test]
     fn test_tx_already_closed() {
-        let (tx, rx) = channel::<i32>();
-        drop(tx);
+        let test_inner = || {
+            let (tx, rx) = channel::<i32>();
+            drop(tx);
 
-        assert!(rx.recv().is_err());
+            assert!(rx.recv().is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
     }
 
     #[test]
     fn test_tx_already_closed_wait() {
-        let (tx, rx) = channel::<i32>();
+        let test_inner = || {
+            let (tx, rx) = channel::<i32>();
 
-        std::thread::spawn(move || {
-            thread::sleep(Duration::from_millis(100));
-            drop(tx);
-        });
+            thread::spawn(move || {
+                thread::yield_now();
+                drop(tx);
+            });
 
-        assert!(rx.recv().is_err());
+            assert!(rx.recv().is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
     }
 }

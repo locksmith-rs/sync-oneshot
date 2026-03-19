@@ -36,8 +36,15 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Run loom Tests
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --lib --release
+        env:
+          RUSTFLAGS: "--cfg loom"
       - name: Run Tests
-        run: cargo test --workspace --all-features
+        run: cargo test --lib
+      - name: Run Doc Tests
+        run: cargo test --doc
 
   miri:
     name: Miri (UB Check)

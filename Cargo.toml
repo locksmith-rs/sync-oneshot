@@ -11,4 +11,10 @@ A minimal oneshot channel for synchronous Rust.
 documentation = "https://docs.rs/sync-oneshot"
 keywords = ["channel", "oneshot", "message"]
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
 [dependencies]
+
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"

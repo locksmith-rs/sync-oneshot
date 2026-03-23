@@ -207,11 +207,16 @@ impl<T> Receiver<T> {
     pub fn recv(mut self) -> Result<T, RecvError> {
         let inner = self.inner.take().unwrap();
 
+        // TODO:
+        // might can be correct the Ordering from Acqurie to Relaxed
+        // need to use atomic::fence
         let mut state = inner.state.load(Ordering::Acquire);
         loop {
             if State(state).is_complete() {
                 let value = unsafe { inner.value.take() };
                 return value.ok_or(RecvError);
+            } else if State(state).is_closed() {
+                return Err(RecvError);
             }
 
             unsafe {
@@ -237,6 +242,13 @@ impl<T> Receiver<T> {
                 }
                 Err(actual) => state = actual,
             }
+        }
+    }
+
+    pub fn close(&mut self) {
+        if let Some(inner) = self.inner.as_ref() {
+            inner.set_close();
+            // TODO: should consume value?
         }
     }
 }
@@ -293,6 +305,10 @@ impl<T> Inner<T> {
             }
         }
         State(state)
+    }
+
+    fn set_close(&self) {
+        self.state.fetch_or(CLOSED, Ordering::Relaxed);
     }
 
     unsafe fn notify(&self) {
@@ -440,6 +456,51 @@ mod tests {
                 drop(tx);
             });
 
+            assert!(rx.recv().is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn test_rx_close() {
+        let test_inner = || {
+            let (tx, mut rx) = channel::<i32>();
+
+            rx.close();
+            assert!(tx.send(5).is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[cfg(not(loom))]
+    #[test]
+    fn test_rx_close_thread() {
+        let (tx, mut rx) = channel();
+
+        std::thread::spawn(move || {
+            rx.close();
+        });
+
+        thread::sleep(std::time::Duration::from_millis(500));
+        assert!(tx.send(5).is_err());
+    }
+
+    #[test]
+    fn test_rx_recv_after_close() {
+        let test_inner = || {
+            let (_tx, mut rx) = channel::<i32>();
+
+            rx.close();
             assert!(rx.recv().is_err());
         };
 

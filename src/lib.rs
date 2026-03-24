@@ -212,6 +212,8 @@ impl<T> Receiver<T> {
             if State(state).is_complete() {
                 let value = unsafe { inner.value.take() };
                 return value.ok_or(RecvError);
+            } else if State(state).is_closed() {
+                return Err(RecvError);
             }
 
             unsafe {
@@ -239,6 +241,17 @@ impl<T> Receiver<T> {
             }
         }
     }
+
+    pub fn close(&mut self) {
+        if let Some(inner) = self.inner.as_ref() {
+            let prev_state = inner.set_close();
+            if prev_state.is_complete() {
+                unsafe {
+                    inner.consumu_value();
+                }
+            }
+        }
+    }
 }
 
 impl<T> Drop for Receiver<T> {
@@ -246,23 +259,10 @@ impl<T> Drop for Receiver<T> {
         // if inner is some, Receiver::recv is not called before drop.
         // Drop value or change state
         if let Some(inner) = self.inner.take() {
-            let mut state = inner.state.load(Ordering::Acquire);
-            loop {
-                if State(state).is_complete() {
-                    unsafe {
-                        inner.consumu_value();
-                        break;
-                    }
-                }
-
-                match inner.state.compare_exchange(
-                    state,
-                    state | CLOSED,
-                    Ordering::Relaxed,
-                    Ordering::Acquire,
-                ) {
-                    Ok(_) => break,
-                    Err(actual) => state = actual,
+            let prev_state = inner.set_close();
+            if prev_state.is_complete() {
+                unsafe {
+                    inner.consumu_value();
                 }
             }
         }
@@ -293,6 +293,10 @@ impl<T> Inner<T> {
             }
         }
         State(state)
+    }
+
+    fn set_close(&self) -> State {
+        State(self.state.fetch_or(CLOSED, Ordering::Acquire))
     }
 
     unsafe fn notify(&self) {
@@ -439,6 +443,69 @@ mod tests {
                 thread::yield_now();
                 drop(tx);
             });
+
+            assert!(rx.recv().is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn test_rx_close() {
+        let test_inner = || {
+            let (tx, mut rx) = channel::<i32>();
+
+            rx.close();
+            assert!(tx.send(5).is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[cfg(not(loom))]
+    #[test]
+    fn test_rx_close_thread() {
+        let (tx, mut rx) = channel();
+
+        std::thread::spawn(move || {
+            rx.close();
+        });
+
+        thread::sleep(std::time::Duration::from_millis(500));
+        assert!(tx.send(5).is_err());
+    }
+
+    #[test]
+    fn test_rx_recv_after_close() {
+        let test_inner = || {
+            let (_tx, mut rx) = channel::<i32>();
+
+            rx.close();
+            assert!(rx.recv().is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn test_rx_recv_after_send_and_close() {
+        let test_inner = || {
+            let (tx, mut rx) = channel();
+
+            tx.send(5).unwrap();
+            rx.close();
 
             assert!(rx.recv().is_err());
         };

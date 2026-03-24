@@ -207,9 +207,6 @@ impl<T> Receiver<T> {
     pub fn recv(mut self) -> Result<T, RecvError> {
         let inner = self.inner.take().unwrap();
 
-        // TODO:
-        // might can be correct the Ordering from Acqurie to Relaxed
-        // need to use atomic::fence
         let mut state = inner.state.load(Ordering::Acquire);
         loop {
             if State(state).is_complete() {
@@ -247,8 +244,12 @@ impl<T> Receiver<T> {
 
     pub fn close(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
-            inner.set_close();
-            // TODO: should consume value?
+            let prev_state = inner.set_close();
+            if prev_state.is_complete() {
+                unsafe {
+                    inner.consumu_value();
+                }
+            }
         }
     }
 }
@@ -258,23 +259,10 @@ impl<T> Drop for Receiver<T> {
         // if inner is some, Receiver::recv is not called before drop.
         // Drop value or change state
         if let Some(inner) = self.inner.take() {
-            let mut state = inner.state.load(Ordering::Acquire);
-            loop {
-                if State(state).is_complete() {
-                    unsafe {
-                        inner.consumu_value();
-                        break;
-                    }
-                }
-
-                match inner.state.compare_exchange(
-                    state,
-                    state | CLOSED,
-                    Ordering::Relaxed,
-                    Ordering::Acquire,
-                ) {
-                    Ok(_) => break,
-                    Err(actual) => state = actual,
+            let prev_state = inner.set_close();
+            if prev_state.is_complete() {
+                unsafe {
+                    inner.consumu_value();
                 }
             }
         }
@@ -307,8 +295,8 @@ impl<T> Inner<T> {
         State(state)
     }
 
-    fn set_close(&self) {
-        self.state.fetch_or(CLOSED, Ordering::Relaxed);
+    fn set_close(&self) -> State {
+        State(self.state.fetch_or(CLOSED, Ordering::Acquire))
     }
 
     unsafe fn notify(&self) {
@@ -501,6 +489,24 @@ mod tests {
             let (_tx, mut rx) = channel::<i32>();
 
             rx.close();
+            assert!(rx.recv().is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn test_rx_recv_after_send_and_close() {
+        let test_inner = || {
+            let (tx, mut rx) = channel();
+
+            tx.send(5).unwrap();
+            rx.close();
+
             assert!(rx.recv().is_err());
         };
 

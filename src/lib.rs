@@ -160,6 +160,17 @@ impl<T> Sender<T> {
 
         Ok(())
     }
+
+    /// Returns true if the associated Receiver handle has been dropped.  
+    /// A Receiver is closed by either calling close explicitly or the Receiver value is dropped.  
+    /// If true is returned, a call to send will always result in an error.
+    pub fn is_closed(&self) -> bool {
+        if let Some(inner) = self.inner.as_ref() {
+            State(inner.state.load(Ordering::Relaxed)).is_closed()
+        } else {
+            true
+        }
+    }
 }
 
 impl<T> Drop for Sender<T> {
@@ -508,6 +519,22 @@ mod tests {
             rx.close();
 
             assert!(rx.recv().is_err());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn test_is_closed() {
+        let test_inner = || {
+            let (tx, mut rx) = channel::<i32>();
+            rx.close();
+
+            assert!(tx.is_closed());
         };
 
         #[cfg(loom)]

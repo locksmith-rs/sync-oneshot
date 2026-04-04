@@ -165,11 +165,8 @@ impl<T> Sender<T> {
     /// A Receiver is closed by either calling close explicitly or the Receiver value is dropped.  
     /// If true is returned, a call to send will always result in an error.
     pub fn is_closed(&self) -> bool {
-        if let Some(inner) = self.inner.as_ref() {
-            State(inner.state.load(Ordering::Acquire)).is_closed()
-        } else {
-            true
-        }
+        let inner = self.inner.as_ref().unwrap();
+        State(inner.state.load(Ordering::Acquire)).is_closed()
     }
 }
 

@@ -166,7 +166,7 @@ impl<T> Sender<T> {
     /// If true is returned, a call to send will always result in an error.
     pub fn is_closed(&self) -> bool {
         if let Some(inner) = self.inner.as_ref() {
-            State(inner.state.load(Ordering::Relaxed)).is_closed()
+            State(inner.state.load(Ordering::Acquire)).is_closed()
         } else {
             true
         }
@@ -307,7 +307,7 @@ impl<T> Inner<T> {
     }
 
     fn set_close(&self) -> State {
-        State(self.state.fetch_or(CLOSED, Ordering::Acquire))
+        State(self.state.fetch_or(CLOSED, Ordering::AcqRel))
     }
 
     unsafe fn notify(&self) {

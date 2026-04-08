@@ -50,7 +50,7 @@ mod error;
 mod notify;
 mod slot;
 
-pub use error::RecvError;
+pub use error::{RecvError, TryRecvError};
 
 /// Creates a new oneshot channel, returning the sender/receiver halves.
 ///
@@ -250,6 +250,43 @@ impl<T> Receiver<T> {
         }
     }
 
+    /// Attempts to return a pending value on this receiver without blocking.
+    ///
+    /// This method will never block the caller in order to wait for data to
+    /// become available. Instead, this will always return immediately with a
+    /// possible option of pending data on the channel.
+    ///
+    /// This is useful for a flavor of “optimistic check” before deciding to
+    /// block on a receiver.
+    ///
+    /// Compared with recv, this function has two failure cases instead of one (one for disconnection, one for an empty buffer).
+    pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
+        let result = if let Some(inner) = self.inner.as_ref() {
+            let state = State(inner.state.load(Ordering::Acquire));
+
+            if state.is_complete() {
+                unsafe {
+                    // SAFETY:
+                    // When state is complete, Sender no longer access value
+                    // Can access value safely
+                    match inner.consumu_value() {
+                        Some(value) => Ok(value),
+                        None => Err(TryRecvError::Closed),
+                    }
+                }
+            } else if state.is_closed() {
+                Err(TryRecvError::Closed)
+            } else {
+                return Err(TryRecvError::Empty);
+            }
+        } else {
+            Err(TryRecvError::Closed)
+        };
+
+        self.inner = None;
+        result
+    }
+
     pub fn close(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
             let prev_state = inner.set_close();
@@ -347,7 +384,7 @@ mod tests {
     #[cfg(not(loom))]
     use std::thread;
 
-    use crate::channel;
+    use crate::{channel, error::TryRecvError};
 
     #[test]
     fn test_local() {
@@ -532,6 +569,55 @@ mod tests {
             rx.close();
 
             assert!(tx.is_closed());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    #[should_panic]
+    fn recv_after_try_recv() {
+        let test_inner = || {
+            let (tx, mut rx) = channel();
+
+            tx.send(5).unwrap();
+            assert_eq!(rx.try_recv().unwrap(), 5);
+            rx.recv().unwrap();
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn try_recv_after_close() {
+        let test_inner = || {
+            let (tx, mut rx) = channel::<i32>();
+
+            drop(tx);
+            assert_eq!(rx.try_recv(), Err(TryRecvError::Closed));
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn try_recv_empty() {
+        let test_inner = || {
+            let (_tx, mut rx) = channel::<i32>();
+
+            assert_eq!(rx.try_recv(), Err(TryRecvError::Empty));
         };
 
         #[cfg(loom)]

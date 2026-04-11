@@ -289,12 +289,7 @@ impl<T> Receiver<T> {
 
     pub fn close(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
-            let prev_state = inner.set_close();
-            if prev_state.is_complete() {
-                unsafe {
-                    inner.consumu_value();
-                }
-            }
+            let _ = inner.set_close();
         }
     }
 }
@@ -552,7 +547,7 @@ mod tests {
             tx.send(5).unwrap();
             rx.close();
 
-            assert!(rx.recv().is_err());
+            assert_eq!(5, rx.recv().unwrap());
         };
 
         #[cfg(loom)]
@@ -618,6 +613,46 @@ mod tests {
             let (_tx, mut rx) = channel::<i32>();
 
             assert_eq!(rx.try_recv(), Err(TryRecvError::Empty));
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn send_close_recv() {
+        let test_inner = || {
+            let (tx, mut rx) = channel();
+            tx.send(5).unwrap();
+            rx.close();
+            assert_eq!(5, rx.try_recv().unwrap());
+
+            let (tx, mut rx) = channel();
+            tx.send(5).unwrap();
+            rx.close();
+            assert_eq!(5, rx.recv().unwrap());
+        };
+
+        #[cfg(loom)]
+        loom::model(test_inner);
+
+        #[cfg(not(loom))]
+        test_inner();
+    }
+
+    #[test]
+    fn test_race_send_drop() {
+        let test_inner = || {
+            let (tx, rx) = channel();
+
+            thread::spawn(move || {
+                let _ = tx.send(5);
+            });
+
+            drop(rx);
         };
 
         #[cfg(loom)]

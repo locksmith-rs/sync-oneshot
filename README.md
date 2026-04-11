@@ -1,8 +1,16 @@
 # sync-oneshot
-[![crates.io](https://img.shields.io/crates/v/sync-oneshot.svg)](https://crates.io/crates/sync-oneshot)
-[![docs.rs](https://img.shields.io/docsrs/sync-oneshot/latest)](https://docs.rs/sync-oneshot)
-[![GitHub License](https://img.shields.io/github/license/locksmith-rs/sync-oneshot)][actions-url]
+[![crates.io][crates.io-badge]][crates.io-url]
+[![docs.rs][docs-rs-badge]][docs-rs-url]
+[![GitHub License][licence-badge]][licence-url]
+[![Build Status][actions-badge]][actions-url]
 
+[crates.io-badge]: https://img.shields.io/crates/v/sync-oneshot.svg
+[crates.io-url]: https://crates.io/crates/sync-oneshot
+[docs-rs-badge]: https://img.shields.io/docsrs/sync-oneshot/latest
+[docs-rs-url]: https://docs.rs/sync-oneshot
+[licence-badge]: https://img.shields.io/github/license/locksmith-rs/sync-oneshot
+[licence-url]: https://github.com/locksmith-rs/sync-oneshot/blob/docs-readme/LICENSE
+[actions-badge]: https://github.com/locksmith-rs/sync-oneshot/workflows/CI/badge.svg
 [actions-url]: https://github.com/locksmith-rs/sync-oneshot/actions?query=branch%3Amain+workflow%3ACI+
 
 A minimal oneshot channel for synchronous Rust.

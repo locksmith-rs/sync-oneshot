@@ -35,6 +35,7 @@ use loom::{
     thread,
 };
 
+use std::fmt;
 #[cfg(not(loom))]
 use std::{
     sync::{
@@ -78,6 +79,7 @@ pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
 ///
 /// This is created by the [`channel`] function.  
 /// Messages can be sent using [`send`](Sender::send).
+#[derive(Debug)]
 pub struct Sender<T> {
     inner: Option<Arc<Inner<T>>>,
 }
@@ -87,6 +89,7 @@ pub struct Sender<T> {
 /// This is created by the [`channel`] function.  
 /// Messages sent to the channel can be retrieved using [`recv`](Receiver::recv).
 /// [`recv`](Receiver::recv) method blocks thread.
+#[derive(Debug)]
 pub struct Receiver<T> {
     inner: Option<Arc<Inner<T>>>,
 }
@@ -404,12 +407,25 @@ impl<T> Inner<T> {
     }
 }
 
+impl<T: fmt::Debug> fmt::Debug for Inner<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Inner")
+            .field("state", &State(self.state.load(Ordering::Relaxed)))
+            .finish()
+    }
+}
+
 struct State(usize);
 
 const WAITING: usize = 0b0001;
 const VALUE_SENT: usize = 0b0010;
 const CLOSED: usize = 0b0100;
 
+/*
+ *
+ * ===== impl State =====
+ *
+ */
 impl State {
     fn is_closed(&self) -> bool {
         self.0 & CLOSED == CLOSED
@@ -421,6 +437,16 @@ impl State {
 
     fn is_complete(&self) -> bool {
         self.0 & VALUE_SENT == VALUE_SENT
+    }
+}
+
+impl fmt::Debug for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("State")
+            .field("is_complete", &self.is_complete())
+            .field("is_closed", &self.is_closed())
+            .field("is_waiting", &self.is_waiting())
+            .finish()
     }
 }
 

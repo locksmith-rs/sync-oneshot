@@ -1,4 +1,10 @@
 # sync-oneshot
+[![crates.io](https://img.shields.io/crates/v/sync-oneshot.svg)](https://crates.io/crates/sync-oneshot)
+[![docs.rs](https://img.shields.io/docsrs/sync-oneshot/latest)](https://docs.rs/sync-oneshot)
+[![GitHub License](https://img.shields.io/github/license/locksmith-rs/sync-oneshot)][actions-url]
+
+[actions-url]: https://github.com/locksmith-rs/sync-oneshot/actions?query=branch%3Amain+workflow%3ACI+
+
 A minimal oneshot channel for synchronous Rust.
 
 A oneshot channel is used for sending a single message between threads.  

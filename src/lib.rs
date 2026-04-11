@@ -287,6 +287,60 @@ impl<T> Receiver<T> {
         result
     }
 
+    /// Prevents the associated [`Sender`] handle from sending a value.
+    ///
+    /// Any `send` operation which happens after calling `close` is guaranteed
+    /// to fail. After calling `close`, [`try_recv`] should be called to
+    /// receive a value if one was sent **before** the call to `close`
+    /// completed.
+    ///
+    /// This function is useful to perform a graceful shutdown and ensure that a
+    /// value will not be sent into the channel and never received.
+    ///
+    /// `close` is no-op if a message is already received or the channel
+    /// is already closed.
+    ///
+    /// [`Sender`]: Sender
+    /// [`try_recv`]: Receiver::try_recv
+    ///
+    /// # Examples
+    ///
+    /// Prevent a value from being sent
+    ///
+    /// ```
+    /// use sync_oneshot::TryRecvError;
+    ///
+    /// # fn main() {
+    /// let (tx, mut rx) = sync_oneshot::channel();
+    ///
+    /// assert!(!tx.is_closed());
+    ///
+    /// rx.close();
+    ///
+    /// assert!(tx.is_closed());
+    /// assert!(tx.send("never received").is_err());
+    ///
+    /// match rx.try_recv() {
+    ///     Err(TryRecvError::Closed) => {}
+    ///     _ => unreachable!(),
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// Receive a value sent **before** calling `close`
+    ///
+    /// ```
+    /// # fn main() {
+    /// let (tx, mut rx) = sync_oneshot::channel();
+    ///
+    /// assert!(tx.send("will receive").is_ok());
+    ///
+    /// rx.close();
+    ///
+    /// let msg = rx.try_recv().unwrap();
+    /// assert_eq!(msg, "will receive");
+    /// # }
+    /// ```
     pub fn close(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
             let _ = inner.set_close();

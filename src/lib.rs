@@ -94,14 +94,17 @@ pub struct Receiver<T> {
     inner: Option<Arc<Inner<T>>>,
 }
 
+unsafe impl<T> Send for Sender<T> where T: Send {}
+unsafe impl<T> Sync for Sender<T> where T: Send {}
+
+unsafe impl<T> Send for Receiver<T> where T: Send {}
+unsafe impl<T> Sync for Receiver<T> where T: Send {}
+
 struct Inner<T> {
     state: AtomicUsize,
     value: Slot<T>,
     notify: Notify,
 }
-
-unsafe impl<T> Send for Sender<T> where T: Send {}
-unsafe impl<T> Send for Receiver<T> where T: Send {}
 
 /*
  *

@@ -106,7 +106,7 @@ impl<T> Receiver<T> for WrappingReceiver<tokio::sync::oneshot::Receiver<T>> {
  *
  */
 fn sync_oneshot(c: &mut Criterion) {
-    c.bench_function("sync-oneshot(basic)", |b| {
+    c.bench_function("sync-oneshot-basic", |b| {
         b.iter(|| {
             let (tx, rx) = sync_oneshot::channel();
             let tx = WrappingSender(Some(tx));
@@ -118,7 +118,7 @@ fn sync_oneshot(c: &mut Criterion) {
 }
 
 fn oneshot(c: &mut Criterion) {
-    c.bench_function("oneshot(basic)", |b| {
+    c.bench_function("oneshot-basic", |b| {
         b.iter(|| {
             let (tx, rx) = oneshot::channel();
             let tx = WrappingSender(Some(tx));
@@ -130,7 +130,7 @@ fn oneshot(c: &mut Criterion) {
 }
 
 fn tokio(c: &mut Criterion) {
-    c.bench_function("tokio(basic)", |b| {
+    c.bench_function("tokio-basic", |b| {
         b.iter(|| {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let tx = WrappingSender(Some(tx));

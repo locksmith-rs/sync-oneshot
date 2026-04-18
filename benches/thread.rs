@@ -124,21 +124,21 @@ where
  */
 
 fn sync_oneshot_thread(c: &mut Criterion) {
-    run_bench(c, "sync-oneshot(thread)", || {
+    run_bench(c, "sync-oneshot-thread", || {
         let (tx, rx) = sync_oneshot::channel::<i32>();
         (WrappingSender(Some(tx)), WrappingReceiver(Some(rx)))
     });
 }
 
 fn oneshot_thread(c: &mut Criterion) {
-    run_bench(c, "oneshot(thread)", || {
+    run_bench(c, "oneshot-thread", || {
         let (tx, rx) = oneshot::channel::<i32>();
         (WrappingSender(Some(tx)), WrappingReceiver(Some(rx)))
     });
 }
 
 fn tokio_thread(c: &mut Criterion) {
-    run_bench(c, "tokio(thread)", || {
+    run_bench(c, "tokio-thread", || {
         let (tx, rx) = tokio::sync::oneshot::channel::<i32>();
         (WrappingSender(Some(tx)), WrappingReceiver(Some(rx)))
     });

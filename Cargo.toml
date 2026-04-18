@@ -16,5 +16,18 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [dependencies]
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+oneshot = { version = "0.2", features = ["std"] }
+tokio = { version = "1", features = ["sync"] }
+
 [target.'cfg(loom)'.dependencies]
 loom = "0.7"
+
+[[bench]]
+name = "basic"
+harness = false
+
+[[bench]]
+name = "thread"
+harness = false

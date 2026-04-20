@@ -27,6 +27,7 @@ impl Notify {
     /// SAFETY:
     /// Notify dose not avoid data race.
     /// Need to trace Notify state in multi thread environment.
+    #[inline]
     pub(crate) unsafe fn set_current(&self) {
         let thread = self.thread.get();
         #[cfg(loom)]
@@ -39,6 +40,7 @@ impl Notify {
     /// SAFETY:
     /// Notify dose not avoid data race.
     /// Need to trace Notify state in multi thread environment.
+    #[inline]
     pub(crate) unsafe fn notify(&self) {
         let thread_ptr = self.thread.get();
         #[cfg(loom)]

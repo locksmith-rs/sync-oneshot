@@ -60,6 +60,7 @@ pub use error::{RecvError, TryRecvError};
 ///
 /// [`send`](Sender::send) will no block the calling thread. [`recv`](Receiver::recv)
 /// will **block** until a message is available.
+#[inline]
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     let inner = Arc::new(Inner {
         state: AtomicUsize::new(0),
@@ -137,6 +138,7 @@ impl<T> Sender<T> {
     ///     Err(_) => println!("the sender dropped"),
     /// }
     /// ```
+    #[inline]
     pub fn send(mut self, value: T) -> Result<(), T> {
         // take inner
         // The case inner None is unreachable
@@ -218,12 +220,14 @@ impl<T> Receiver<T> {
     ///
     /// assert_eq!(5, rx.recv().unwrap());
     /// ```
+    #[inline]
     pub fn recv(mut self) -> Result<T, RecvError> {
         let inner = self.inner.take().unwrap();
 
         let mut state = inner.state.load(Ordering::Acquire);
         loop {
             if State(state).is_complete() {
+                // FIXME: use Inner::consumu_value
                 let value = unsafe { inner.value.take() };
                 return value.ok_or(RecvError);
             } else if State(state).is_closed() {
@@ -266,6 +270,7 @@ impl<T> Receiver<T> {
     /// block on a receiver.
     ///
     /// Compared with recv, this function has two failure cases instead of one (one for disconnection, one for an empty buffer).
+    #[inline]
     pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
         let result = if let Some(inner) = self.inner.as_ref() {
             let state = State(inner.state.load(Ordering::Acquire));
@@ -375,6 +380,7 @@ impl<T> Drop for Receiver<T> {
  *
  */
 impl<T> Inner<T> {
+    #[inline]
     fn set_complete(&self) -> State {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -395,16 +401,19 @@ impl<T> Inner<T> {
         State(state)
     }
 
+    #[inline]
     fn set_close(&self) -> State {
         State(self.state.fetch_or(CLOSED, Ordering::AcqRel))
     }
 
+    #[inline]
     unsafe fn notify(&self) {
         unsafe {
             self.notify.notify();
         }
     }
 
+    #[inline]
     unsafe fn consumu_value(&self) -> Option<T> {
         unsafe { self.value.take() }
     }
@@ -430,14 +439,17 @@ const CLOSED: usize = 0b0100;
  *
  */
 impl State {
+    #[inline]
     fn is_closed(&self) -> bool {
         self.0 & CLOSED == CLOSED
     }
 
+    #[inline]
     fn is_waiting(&self) -> bool {
         self.0 & WAITING == WAITING
     }
 
+    #[inline]
     fn is_complete(&self) -> bool {
         self.0 & VALUE_SENT == VALUE_SENT
     }

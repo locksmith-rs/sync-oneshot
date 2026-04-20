@@ -15,6 +15,7 @@ impl<T> Slot<T> {
         }
     }
 
+    #[inline]
     pub(crate) unsafe fn set(&self, value: T) {
         let val_ptr = self.value.get();
         #[cfg(loom)]
@@ -25,6 +26,7 @@ impl<T> Slot<T> {
         }
     }
 
+    #[inline]
     pub(crate) unsafe fn take(&self) -> Option<T> {
         let val_ptr = self.value.get();
         #[cfg(loom)]

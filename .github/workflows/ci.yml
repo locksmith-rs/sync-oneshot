@@ -2,9 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -38,11 +38,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Run loom Tests
         if: matrix.os == 'ubuntu-latest'
-        run: cargo test --lib --release
+        run: cargo test --tests --release
         env:
           RUSTFLAGS: "--cfg loom"
       - name: Run Tests
-        run: cargo test --lib
+        run: cargo test --tests
       - name: Run Doc Tests
         run: cargo test --doc
 
@@ -58,9 +58,9 @@ jobs:
           components: miri
       - name: Run Miri
         # -Zmiri-tree-borrows: Experimental but better for finding aliasing bugs
-        # --lib: Miri is slow; we prioritize the core library logic
+        # --tests: Miri is slow; we prioritize the core library logic
         run: |
           cargo miri setup
-          cargo miri test --lib
+          cargo miri test --tests
         env:
           MIRIFLAGS: "-Zmiri-tree-borrows"

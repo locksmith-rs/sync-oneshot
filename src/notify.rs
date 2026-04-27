@@ -10,7 +10,7 @@ use std::{
     thread::{self, Thread},
 };
 
-/// Mechanisumu for waking blocking thread.
+/// Mechanism for waking blocking thread.
 ///
 /// Provide getting thread and notify to wake up.
 pub(crate) struct Notify {

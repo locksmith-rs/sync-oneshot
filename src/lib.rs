@@ -228,7 +228,7 @@ impl<T> Receiver<T> {
         let mut state = inner.state.load(Ordering::Acquire);
         loop {
             if State(state).is_complete() {
-                // FIXME: use Inner::consumu_value
+                // FIXME: use Inner::consume_value
                 let value = unsafe { inner.value.take() };
                 return value.ok_or(RecvError);
             } else if State(state).is_closed() {
@@ -237,7 +237,7 @@ impl<T> Receiver<T> {
 
             unsafe {
                 // SAFETY:
-                // Notify::notify dose not call untill state is WAITNG.
+                // Notify::notify dose not call until state is WAITING.
                 // So we can access notify.
 
                 // Prevent double write due to spurious wake-up.

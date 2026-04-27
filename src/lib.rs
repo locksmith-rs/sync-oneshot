@@ -228,8 +228,7 @@ impl<T> Receiver<T> {
         let mut state = inner.state.load(Ordering::Acquire);
         loop {
             if State(state).is_complete() {
-                // FIXME: use Inner::consume_value
-                let value = unsafe { inner.value.take() };
+                let value = unsafe { inner.consumu_value() };
                 return value.ok_or(RecvError);
             } else if State(state).is_closed() {
                 return Err(RecvError);

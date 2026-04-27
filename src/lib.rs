@@ -157,7 +157,7 @@ impl<T> Sender<T> {
         if prev_state.is_closed() {
             // SAFETY:
             // Receiver already has been droped. So can access inner value.
-            return Err(unsafe { inner.consumu_value().unwrap() });
+            return Err(unsafe { inner.consume_value().unwrap() });
         }
 
         if prev_state.is_waiting() {
@@ -228,7 +228,7 @@ impl<T> Receiver<T> {
         let mut state = inner.state.load(Ordering::Acquire);
         loop {
             if State(state).is_complete() {
-                let value = unsafe { inner.consumu_value() };
+                let value = unsafe { inner.consume_value() };
                 return value.ok_or(RecvError);
             } else if State(state).is_closed() {
                 return Err(RecvError);
@@ -280,7 +280,7 @@ impl<T> Receiver<T> {
                     // SAFETY:
                     // When state is complete, Sender no longer access value
                     // Can access value safely
-                    match inner.consumu_value() {
+                    match inner.consume_value() {
                         Some(value) => Ok(value),
                         None => Err(TryRecvError::Closed),
                     }
@@ -367,7 +367,7 @@ impl<T> Drop for Receiver<T> {
             let prev_state = inner.set_close();
             if prev_state.is_complete() {
                 unsafe {
-                    inner.consumu_value();
+                    inner.consume_value();
                 }
             }
         }
@@ -414,7 +414,7 @@ impl<T> Inner<T> {
     }
 
     #[inline]
-    unsafe fn consumu_value(&self) -> Option<T> {
+    unsafe fn consume_value(&self) -> Option<T> {
         unsafe { self.value.take() }
     }
 }

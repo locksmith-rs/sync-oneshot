@@ -14,3 +14,9 @@ pub enum TryRecvError {
     /// The send half of the channel was dropped without sending a value.
     Closed,
 }
+
+#[derive(Debug)]
+pub enum RecvTimeoutError {
+    Timeout,
+    Closed,
+}

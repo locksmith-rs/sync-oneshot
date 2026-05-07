@@ -298,6 +298,7 @@ impl<T> Receiver<T> {
         result
     }
 
+    #[cfg(not(loom))]
     pub fn recv_deadline(&mut self, deadline: Instant) -> Result<T, RecvTimeoutError> {
         let result = if let Some(inner) = self.inner.as_ref() {
             // load state

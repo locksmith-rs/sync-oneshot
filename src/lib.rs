@@ -45,13 +45,13 @@ use std::{
     thread,
 };
 
-use crate::{error::RecvTimeoutError, notify::Notify, slot::Slot};
+use crate::{notify::Notify, slot::Slot};
 
 mod error;
 mod notify;
 mod slot;
 
-pub use error::{RecvError, TryRecvError};
+pub use error::{RecvError, RecvTimeoutError, TryRecvError};
 
 /// Creates a new oneshot channel, returning the sender/receiver halves.
 ///

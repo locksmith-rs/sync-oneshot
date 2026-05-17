@@ -301,11 +301,8 @@ impl<T> Receiver<T> {
     #[cfg(not(loom))]
     pub fn recv_deadline(&mut self, deadline: Instant) -> Result<T, RecvTimeoutError> {
         let result = if let Some(inner) = self.inner.as_ref() {
-            // load state
             let mut state = inner.state.load(Ordering::Acquire);
             loop {
-                // complete => return Ok(val),
-                // is_closed => return Err(Closed)
                 if State(state).is_complete() {
                     match unsafe { inner.consume_value() } {
                         Some(val) => return Ok(val),
@@ -315,66 +312,46 @@ impl<T> Receiver<T> {
                     return Err(RecvTimeoutError::Closed);
                 }
 
-                // set current thread handle
                 unsafe { inner.notify.set_current() };
 
-                // update state to `waiting`(CAS)
-                // Ok => {} or break
-                // Err => continue, go to first
                 match inner.state.compare_exchange_weak(
                     state,
                     state | WAITING,
                     Ordering::Release,
                     Ordering::Acquire,
                 ) {
-                    Ok(_) => {
-                        loop {
-                            match deadline.checked_duration_since(Instant::now()) {
-                                // Some =>
-                                //      park_timeout
-                                //      load state
-                                //      complete => return Ok(val)
-                                //      is_closed => return Err(Closed)
-                                Some(duration) => {
-                                    thread::park_timeout(duration);
-                                    // update state
-                                    state = inner.state.load(Ordering::Acquire);
-                                    if State(state).is_complete() {
-                                        let val = unsafe { inner.consume_value() };
-                                        match val {
-                                            Some(val) => return Ok(val),
-                                            None => return Err(RecvTimeoutError::Closed),
-                                        }
-                                    } else if State(state).is_closed() {
-                                        return Err(RecvTimeoutError::Closed);
+                    Ok(_) => loop {
+                        match deadline.checked_duration_since(Instant::now()) {
+                            Some(duration) => {
+                                thread::park_timeout(duration);
+                                state = inner.state.load(Ordering::Acquire);
+                                if State(state).is_complete() {
+                                    let val = unsafe { inner.consume_value() };
+                                    match val {
+                                        Some(val) => return Ok(val),
+                                        None => return Err(RecvTimeoutError::Closed),
                                     }
-                                    // other case, continue loop
-                                    // (Timeout, spurious-wakeup)
-                                }
-                                None => {
-                                    // load state
-                                    // should change state to down WAITING flag?
-                                    // complete => return Ok
-                                    // closed => return Err
-                                    // other => return Err as Timeout
-                                    state = inner.state.load(Ordering::Acquire);
-                                    if State(state).is_complete() {
-                                        let val = unsafe { inner.consume_value() };
-                                        match val {
-                                            Some(val) => return Ok(val),
-                                            None => return Err(RecvTimeoutError::Closed),
-                                        }
-                                    } else if State(state).is_closed() {
-                                        return Err(RecvTimeoutError::Closed);
-                                    }
-
-                                    // err Timeout
-                                    inner.state.fetch_and(!WAITING, Ordering::Relaxed);
-                                    return Err(RecvTimeoutError::Timeout);
+                                } else if State(state).is_closed() {
+                                    return Err(RecvTimeoutError::Closed);
                                 }
                             }
+                            None => {
+                                state = inner.state.load(Ordering::Acquire);
+                                if State(state).is_complete() {
+                                    let val = unsafe { inner.consume_value() };
+                                    match val {
+                                        Some(val) => return Ok(val),
+                                        None => return Err(RecvTimeoutError::Closed),
+                                    }
+                                } else if State(state).is_closed() {
+                                    return Err(RecvTimeoutError::Closed);
+                                }
+
+                                inner.state.fetch_and(!WAITING, Ordering::Relaxed);
+                                return Err(RecvTimeoutError::Timeout);
+                            }
                         }
-                    }
+                    },
                     Err(actual) => state = actual,
                 }
             }

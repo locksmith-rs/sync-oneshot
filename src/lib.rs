@@ -300,16 +300,16 @@ impl<T> Receiver<T> {
 
     #[cfg(not(loom))]
     pub fn recv_deadline(&mut self, deadline: Instant) -> Result<T, RecvTimeoutError> {
+        // FIXME:
+        // this implementation is too durty
+        // please refactoring
         let result = if let Some(inner) = self.inner.as_ref() {
             let mut state = inner.state.load(Ordering::Acquire);
-            loop {
+            'outer: loop {
                 if State(state).is_complete() {
-                    match unsafe { inner.consume_value() } {
-                        Some(val) => return Ok(val),
-                        None => return Err(RecvTimeoutError::Closed),
-                    };
+                    break unsafe { inner.consume_value() }.ok_or(RecvTimeoutError::Closed);
                 } else if State(state).is_closed() {
-                    return Err(RecvTimeoutError::Closed);
+                    break Err(RecvTimeoutError::Closed);
                 }
 
                 unsafe { inner.notify.set_current() };
@@ -321,33 +321,31 @@ impl<T> Receiver<T> {
                     Ordering::Acquire,
                 ) {
                     Ok(_) => loop {
+                        // this loop protect spurious-wakeup and check Timeout
+                        // can remove this loop, insted use outer loop
                         match deadline.checked_duration_since(Instant::now()) {
                             Some(duration) => {
                                 thread::park_timeout(duration);
+
                                 state = inner.state.load(Ordering::Acquire);
                                 if State(state).is_complete() {
-                                    let val = unsafe { inner.consume_value() };
-                                    match val {
-                                        Some(val) => return Ok(val),
-                                        None => return Err(RecvTimeoutError::Closed),
-                                    }
+                                    break 'outer unsafe { inner.consume_value() }
+                                        .ok_or(RecvTimeoutError::Closed);
                                 } else if State(state).is_closed() {
-                                    return Err(RecvTimeoutError::Closed);
+                                    break 'outer Err(RecvTimeoutError::Closed);
                                 }
                             }
                             None => {
                                 state = inner.state.load(Ordering::Acquire);
                                 if State(state).is_complete() {
-                                    let val = unsafe { inner.consume_value() };
-                                    match val {
-                                        Some(val) => return Ok(val),
-                                        None => return Err(RecvTimeoutError::Closed),
-                                    }
+                                    break 'outer unsafe { inner.consume_value() }
+                                        .ok_or(RecvTimeoutError::Closed);
                                 } else if State(state).is_closed() {
-                                    return Err(RecvTimeoutError::Closed);
+                                    break 'outer Err(RecvTimeoutError::Closed);
                                 }
 
                                 inner.state.fetch_and(!WAITING, Ordering::Relaxed);
+                                // return Error to prevent set inner as None
                                 return Err(RecvTimeoutError::Timeout);
                             }
                         }

@@ -338,6 +338,20 @@ fn recv_no_timeout() {
 
 #[cfg(not(loom))]
 #[test]
+fn recv_timeout_send() {
+    let (tx, mut rx) = channel::<i32>();
+
+    match rx.recv_deadline(Instant::now()) {
+        Err(RecvTimeoutError::Timeout) => {}
+        _ => panic!("expected Timeout Error"),
+    }
+
+    tx.send(5).unwrap();
+    assert_eq!(rx.recv().unwrap(), 5);
+}
+
+#[cfg(not(loom))]
+#[test]
 fn recv_deadline_pass() {
     let (_tx, mut rx) = channel::<i32>();
 

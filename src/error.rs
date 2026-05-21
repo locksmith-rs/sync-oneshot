@@ -15,7 +15,7 @@ pub enum TryRecvError {
     Closed,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RecvTimeoutError {
     Timeout,
     Closed,

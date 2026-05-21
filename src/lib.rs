@@ -298,6 +298,9 @@ impl<T> Receiver<T> {
         result
     }
 
+    /// Attempts to wait for a value on this receiver,
+    /// returning an error if the corresponding [`Sender`] half of
+    /// this channel has been dropped, or if deadline is reached.
     #[cfg(not(loom))]
     pub fn recv_deadline(&mut self, deadline: Instant) -> Result<T, RecvTimeoutError> {
         // FIXME:

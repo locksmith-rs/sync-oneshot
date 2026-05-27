@@ -35,7 +35,7 @@ use loom::{
     thread,
 };
 
-use std::fmt;
+use std::{fmt, time::Instant};
 #[cfg(not(loom))]
 use std::{
     sync::{
@@ -51,7 +51,7 @@ mod error;
 mod notify;
 mod slot;
 
-pub use error::{RecvError, TryRecvError};
+pub use error::{RecvError, RecvTimeoutError, TryRecvError};
 
 /// Creates a new oneshot channel, returning the sender/receiver halves.
 ///
@@ -292,6 +292,72 @@ impl<T> Receiver<T> {
             }
         } else {
             Err(TryRecvError::Closed)
+        };
+
+        self.inner = None;
+        result
+    }
+
+    /// Attempts to wait for a value on this receiver,
+    /// returning an error if the corresponding [`Sender`] half of
+    /// this channel has been dropped, or if deadline is reached.
+    #[cfg(not(loom))]
+    pub fn recv_deadline(&mut self, deadline: Instant) -> Result<T, RecvTimeoutError> {
+        // FIXME:
+        // this implementation is too durty
+        // please refactoring
+        let result = if let Some(inner) = self.inner.as_ref() {
+            let mut state = inner.state.load(Ordering::Acquire);
+            'outer: loop {
+                if State(state).is_complete() {
+                    break unsafe { inner.consume_value() }.ok_or(RecvTimeoutError::Closed);
+                } else if State(state).is_closed() {
+                    break Err(RecvTimeoutError::Closed);
+                }
+
+                unsafe { inner.notify.set_current() };
+
+                match inner.state.compare_exchange_weak(
+                    state,
+                    state | WAITING,
+                    Ordering::Release,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => loop {
+                        // this loop protect spurious-wakeup and check Timeout
+                        // can remove this loop, insted use outer loop
+                        match deadline.checked_duration_since(Instant::now()) {
+                            Some(duration) => {
+                                thread::park_timeout(duration);
+
+                                state = inner.state.load(Ordering::Acquire);
+                                if State(state).is_complete() {
+                                    break 'outer unsafe { inner.consume_value() }
+                                        .ok_or(RecvTimeoutError::Closed);
+                                } else if State(state).is_closed() {
+                                    break 'outer Err(RecvTimeoutError::Closed);
+                                }
+                            }
+                            None => {
+                                state = inner.state.load(Ordering::Acquire);
+                                if State(state).is_complete() {
+                                    break 'outer unsafe { inner.consume_value() }
+                                        .ok_or(RecvTimeoutError::Closed);
+                                } else if State(state).is_closed() {
+                                    break 'outer Err(RecvTimeoutError::Closed);
+                                }
+
+                                inner.state.fetch_and(!WAITING, Ordering::Relaxed);
+                                // return Error to prevent set inner as None
+                                return Err(RecvTimeoutError::Timeout);
+                            }
+                        }
+                    },
+                    Err(actual) => state = actual,
+                }
+            }
+        } else {
+            Err(RecvTimeoutError::Closed)
         };
 
         self.inner = None;

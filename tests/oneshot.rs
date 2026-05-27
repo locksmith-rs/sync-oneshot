@@ -2,9 +2,12 @@
 use loom::thread;
 
 #[cfg(not(loom))]
-use std::thread;
+use core::panic;
+use std::time::Instant;
+#[cfg(not(loom))]
+use std::{thread, time::Duration};
 
-use sync_oneshot::{TryRecvError, channel};
+use sync_oneshot::{RecvTimeoutError, TryRecvError, channel};
 
 #[test]
 fn test_local() {
@@ -285,4 +288,80 @@ fn test_race_send_drop() {
 
     #[cfg(not(loom))]
     test_inner();
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_deadline_ok() {
+    let (tx, mut rx) = channel::<i32>();
+    tx.send(5).unwrap();
+
+    let res = rx.recv_deadline(Instant::now()).unwrap();
+    assert_eq!(res, 5);
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_deadline_closed() {
+    let (_tx, mut rx) = channel::<i32>();
+
+    rx.close();
+
+    match rx.recv_deadline(Instant::now()) {
+        Err(RecvTimeoutError::Closed) => {}
+        _ => panic!("expected Closed Error"),
+    }
+}
+
+#[cfg(not(loom))]
+#[test]
+fn send_never_deadline() {
+    let (tx, mut rx) = channel::<i32>();
+    std::mem::drop(tx);
+
+    match rx.recv_deadline(Instant::now()) {
+        Err(RecvTimeoutError::Closed) => {}
+        _ => panic!("expected Closed Error"),
+    }
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_no_timeout() {
+    let (_tx, mut rx) = channel::<i32>();
+
+    match rx.recv_deadline(Instant::now()) {
+        Err(RecvTimeoutError::Timeout) => {}
+        _ => panic!("expected Timeout Error"),
+    }
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_timeout_send() {
+    let (tx, mut rx) = channel::<i32>();
+
+    match rx.recv_deadline(Instant::now()) {
+        Err(RecvTimeoutError::Timeout) => {}
+        _ => panic!("expected Timeout Error"),
+    }
+
+    tx.send(5).unwrap();
+    assert_eq!(rx.recv().unwrap(), 5);
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_deadline_pass() {
+    let (_tx, mut rx) = channel::<i32>();
+
+    let time = Instant::now();
+    let timeout = Duration::from_millis(100);
+
+    match rx.recv_deadline(time + timeout) {
+        Err(RecvTimeoutError::Timeout) => {}
+        _ => panic!("expected Timeout Error"),
+    }
+
+    assert!(time.elapsed() >= timeout);
 }

@@ -222,42 +222,13 @@ impl<T> Receiver<T> {
     /// assert_eq!(5, rx.recv().unwrap());
     /// ```
     #[inline]
-    pub fn recv(mut self) -> Result<T, RecvError> {
-        let inner = self.inner.take().unwrap();
-
-        let mut state = inner.state.load(Ordering::Acquire);
-        loop {
-            if State(state).is_complete() {
-                let value = unsafe { inner.consume_value() };
-                return value.ok_or(RecvError);
-            } else if State(state).is_closed() {
-                return Err(RecvError);
-            }
-
-            unsafe {
-                // SAFETY:
-                // Notify::notify dose not call until state is WAITING.
-                // So we can access notify.
-
-                // Prevent double write due to spurious wake-up.
-                if !State(state).is_waiting() {
-                    inner.notify.set_current();
-                }
-            }
-
-            match inner.state.compare_exchange(
-                state,
-                state | WAITING,
-                Ordering::Release,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    thread::park();
-                    state = inner.state.load(Ordering::Acquire);
-                }
-                Err(actual) => state = actual,
-            }
-        }
+    pub fn recv(self) -> Result<T, RecvError> {
+        self.recv_inner(|inner, state| {
+            thread::park();
+            *state = inner.state.load(Ordering::Acquire);
+            true
+        })
+        .map_err(|_| RecvError)
     }
 
     /// Attempts to return a pending value on this receiver without blocking.
@@ -303,19 +274,54 @@ impl<T> Receiver<T> {
     /// this channel has been dropped, or if deadline is reached.
     #[cfg(not(loom))]
     pub fn recv_deadline(&mut self, deadline: Instant) -> Result<T, RecvTimeoutError> {
-        // FIXME:
-        // this implementation is too durty
-        // please refactoring
-        let result = if let Some(inner) = self.inner.as_ref() {
+        let result =
+            self.recv_inner(
+                |inner, state| match deadline.checked_duration_since(Instant::now()) {
+                    Some(duration) => {
+                        thread::park_timeout(duration);
+                        *state = inner.state.load(Ordering::Acquire);
+                        true
+                    }
+                    None => {
+                        let prev_state = inner.state.fetch_and(!WAITING, Ordering::Acquire);
+                        if State(prev_state).is_complete() | State(prev_state).is_closed() {
+                            *state = prev_state;
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                },
+            );
+
+        match result {
+            Ok(_) => {
+                self.inner = None;
+            }
+            Err(RecvTimeoutError::Closed) => {
+                self.inner = None;
+            }
+            _ => {}
+        }
+        result
+    }
+
+    fn recv_inner<F>(&self, f: F) -> Result<T, RecvTimeoutError>
+    where
+        F: Fn(&Arc<Inner<T>>, &mut usize) -> bool,
+    {
+        if let Some(inner) = self.inner.as_ref() {
             let mut state = inner.state.load(Ordering::Acquire);
-            'outer: loop {
+            loop {
                 if State(state).is_complete() {
                     break unsafe { inner.consume_value() }.ok_or(RecvTimeoutError::Closed);
                 } else if State(state).is_closed() {
                     break Err(RecvTimeoutError::Closed);
                 }
 
-                unsafe { inner.notify.set_current() };
+                if !State(state).is_waiting() {
+                    unsafe { inner.notify.set_current() };
+                }
 
                 match inner.state.compare_exchange_weak(
                     state,
@@ -323,45 +329,17 @@ impl<T> Receiver<T> {
                     Ordering::Release,
                     Ordering::Acquire,
                 ) {
-                    Ok(_) => loop {
-                        // this loop protect spurious-wakeup and check Timeout
-                        // can remove this loop, insted use outer loop
-                        match deadline.checked_duration_since(Instant::now()) {
-                            Some(duration) => {
-                                thread::park_timeout(duration);
-
-                                state = inner.state.load(Ordering::Acquire);
-                                if State(state).is_complete() {
-                                    break 'outer unsafe { inner.consume_value() }
-                                        .ok_or(RecvTimeoutError::Closed);
-                                } else if State(state).is_closed() {
-                                    break 'outer Err(RecvTimeoutError::Closed);
-                                }
-                            }
-                            None => {
-                                state = inner.state.load(Ordering::Acquire);
-                                if State(state).is_complete() {
-                                    break 'outer unsafe { inner.consume_value() }
-                                        .ok_or(RecvTimeoutError::Closed);
-                                } else if State(state).is_closed() {
-                                    break 'outer Err(RecvTimeoutError::Closed);
-                                }
-
-                                inner.state.fetch_and(!WAITING, Ordering::Relaxed);
-                                // return Error to prevent set inner as None
-                                return Err(RecvTimeoutError::Timeout);
-                            }
+                    Ok(_) => {
+                        if !f(inner, &mut state) {
+                            break Err(RecvTimeoutError::Timeout);
                         }
-                    },
+                    }
                     Err(actual) => state = actual,
                 }
             }
         } else {
             Err(RecvTimeoutError::Closed)
-        };
-
-        self.inner = None;
-        result
+        }
     }
 
     /// Prevents the associated [`Sender`] handle from sending a value.

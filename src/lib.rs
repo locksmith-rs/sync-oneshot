@@ -306,6 +306,7 @@ impl<T> Receiver<T> {
         result
     }
 
+    #[inline(always)]
     fn recv_inner<F>(&self, f: F) -> Result<T, RecvTimeoutError>
     where
         F: Fn(&Arc<Inner<T>>, &mut usize) -> bool,

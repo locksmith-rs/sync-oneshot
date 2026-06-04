@@ -43,6 +43,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     thread,
+    time::Duration,
 };
 
 use crate::{notify::Notify, slot::Slot};
@@ -301,6 +302,20 @@ impl<T> Receiver<T> {
             _ => {}
         }
         result
+    }
+
+    #[cfg(not(loom))]
+    pub fn recv_timeout(&mut self, timeout: Duration) -> Result<T, RecvTimeoutError> {
+        match Instant::now().checked_add(timeout) {
+            Some(deadline) => self.recv_deadline(deadline),
+            None => self
+                .recv_inner(|inner, state| {
+                    thread::park();
+                    *state = inner.state.load(Ordering::Acquire);
+                    true
+                })
+                .map_err(|_| RecvTimeoutError::Closed),
+        }
     }
 
     #[inline(always)]

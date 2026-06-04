@@ -2,7 +2,8 @@
 use loom::thread;
 
 #[cfg(not(loom))]
-use core::panic;
+use std::panic;
+#[cfg(not(loom))]
 use std::time::Instant;
 #[cfg(not(loom))]
 use std::{thread, time::Duration};
@@ -364,4 +365,74 @@ fn recv_deadline_pass() {
     }
 
     assert!(time.elapsed() >= timeout);
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_timeout_ok() {
+    let (tx, mut rx) = channel();
+
+    let timeout = Duration::from_millis(100);
+    tx.send(5).unwrap();
+
+    assert_eq!(rx.recv_timeout(timeout).unwrap(), 5);
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_timeout_closed() {
+    let (_tx, mut rx) = channel::<i32>();
+
+    let timeout = Duration::from_millis(100);
+
+    rx.close();
+
+    match rx.recv_timeout(timeout) {
+        Err(RecvTimeoutError::Closed) => {}
+        _ => panic!("expected Closed Error"),
+    }
+
+    let (tx, mut rx) = channel::<i32>();
+
+    let timeout = Duration::from_millis(100);
+
+    drop(tx);
+
+    match rx.recv_timeout(timeout) {
+        Err(RecvTimeoutError::Closed) => {}
+        _ => panic!("expected Closed Error"),
+    }
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_timeout_pass() {
+    let (_tx, mut rx) = channel::<i32>();
+
+    let time = Instant::now();
+    let timeout = Duration::from_millis(100);
+
+    match rx.recv_timeout(timeout) {
+        Err(RecvTimeoutError::Timeout) => {}
+        _ => panic!("expected Timeout Error"),
+    }
+
+    assert!(time.elapsed() >= timeout);
+}
+
+#[cfg(not(loom))]
+#[test]
+fn recv_timeout_err_send() {
+    let (tx, mut rx) = channel();
+
+    let timeout = Duration::from_millis(100);
+
+    match rx.recv_timeout(timeout) {
+        Err(RecvTimeoutError::Timeout) => {}
+        _ => panic!("expected Timeout Error"),
+    }
+
+    tx.send(5).unwrap();
+
+    assert_eq!(rx.recv_timeout(timeout).unwrap(), 5);
 }

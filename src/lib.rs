@@ -295,10 +295,7 @@ impl<T> Receiver<T> {
             );
 
         match result {
-            Ok(_) => {
-                self.inner = None;
-            }
-            Err(RecvTimeoutError::Closed) => {
+            Ok(_) | Err(RecvTimeoutError::Closed) => {
                 self.inner = None;
             }
             _ => {}

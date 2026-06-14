@@ -323,6 +323,9 @@ impl<T> Receiver<T> {
             Some(deadline) => self.recv_deadline(deadline),
             None => self
                 .recv_inner(|inner, state| {
+                    // waits until Sender sent a value (same Receiver::recv)
+                    // if return type of checked_add None, it will
+                    // overflow and wait indefinitely
                     thread::park();
                     *state = inner.state.load(Ordering::Acquire);
                     true

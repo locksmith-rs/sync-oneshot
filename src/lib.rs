@@ -43,6 +43,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     thread,
+    time::Duration,
 };
 
 use crate::{notify::Notify, slot::Slot};
@@ -301,6 +302,36 @@ impl<T> Receiver<T> {
             _ => {}
         }
         result
+    }
+
+    /// Attempts to wait for a value on this receiver, returning an error if the
+    /// corresponding channel has hung up, or if it waits more than `timeout`.
+    ///
+    /// This function will always block the current thread if there is no data
+    /// available and it's possible for more data to be sent.
+    /// Once a message is sent to the corresponding [`Sender`]
+    /// this receiver will wake up and return that message.
+    ///
+    /// If the corresponding [`Sender`] has dropped, or it disconnects while
+    /// this call is blocking, this call will wake up and return [`Err`] to
+    /// indicate that no more messages can ever be received on this channel.
+    /// However, since channels are buffered, messages sent before the disconnect
+    /// will still be properly received.
+    #[cfg(not(loom))]
+    pub fn recv_timeout(&mut self, timeout: Duration) -> Result<T, RecvTimeoutError> {
+        match Instant::now().checked_add(timeout) {
+            Some(deadline) => self.recv_deadline(deadline),
+            None => self
+                .recv_inner(|inner, state| {
+                    // waits until Sender sent a value (same Receiver::recv)
+                    // if return type of checked_add None, it will
+                    // overflow and wait indefinitely
+                    thread::park();
+                    *state = inner.state.load(Ordering::Acquire);
+                    true
+                })
+                .map_err(|_| RecvTimeoutError::Closed),
+        }
     }
 
     #[inline(always)]

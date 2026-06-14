@@ -16,7 +16,7 @@ pub enum TryRecvError {
 }
 
 /// An error returned from the [`recv_deadline`](crate::Receiver::recv_deadline)
-/// methods.
+/// and [`recv_timeout`](crate::Receiver::recv_timeout) methods.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RecvTimeoutError {
     Timeout,
